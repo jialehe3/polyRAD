@@ -175,4 +175,4 @@ for (m in 1:length(myRAD)){
   realestimate[[m]] <- real_estigeno
 }
 # compare allele frequency 
-# git test
+# git test 2
