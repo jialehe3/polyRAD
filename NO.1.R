@@ -134,7 +134,7 @@ err <- which(is.na(match(a,c)))
 
 ### polyRAD processing
 myvcf <- "/Users/hejiale/Desktop/For Jiale/170608Msi_PstI_genotypes.vcf"
-clengths <- read.csv("/Users/hejiale/chromosome_lengths.CSV")
+clengths <- read.csv("/Users/hejiale/polyRAD/datasets/chromosome_lengths.CSV")
 library(VariantAnnotation)
 library(polyRAD)
 clengths$chr <- gsub(clengths$chr, patter = "Chr", replacement = "")
@@ -166,13 +166,24 @@ for (j in cchrom[1:19]){
   }
 }
 
+alefq <- list()
 realestimate <- list()
 for (m in 1:length(myRAD)){
   # can pull allele frequency out of the iterate file: $alleleFreq
   real_iterate <- IterateHWE(myRAD[[m]])
-  # alleledepth/alleledepth + antialleledepth through colsum
+  alefq[[m]] <- real_iterate$alleleFreq
+  # alleledepth/(alleledepth + antialleledepth) through colsum
   real_estigeno <- GetProbableGenotypes(real_iterate, omitCommonAllele = FALSE)
   realestimate[[m]] <- real_estigeno
 }
+
+alratio <- list()
+for (n in 1:length(alefq)){
+  alratio[[n]] <- colSums(myRAD[[n]]$alleleDepth)/(colSums(myRAD[[n]]$alleleDepth)+colSums(myRAD[[n]]$antiAlleleDepth))
+}
+Ratio_Freq <- data.frame(unlist(alratio),unlist(alefq))
+colnames(Ratio_Freq) <- c("alleleRatio","alleleFrequency")
+Ratio_Freq$difference <- abs(Ratio_Freq$alleleRatio - Ratio_Freq$alleleFrequency)
 # compare allele frequency 
+save(Ratio_Freq, file = "ratioXfreq.Rdata")
 # git test 2
