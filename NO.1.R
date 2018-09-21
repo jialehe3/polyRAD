@@ -187,3 +187,5 @@ Ratio_Freq$difference <- abs(Ratio_Freq$alleleRatio - Ratio_Freq$alleleFrequency
 # compare allele frequency 
 save(Ratio_Freq, file = "ratioXfreq.Rdata")
 # git test 2
+
+plot(Ratio_Freq$difference)
