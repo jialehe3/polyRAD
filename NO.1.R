@@ -168,24 +168,91 @@ for (j in cchrom[1:19]){
 
 alefq <- list()
 realestimate <- list()
+name1 <- list()
+name2 <- list()
 for (m in 1:length(myRAD)){
   # can pull allele frequency out of the iterate file: $alleleFreq
   real_iterate <- IterateHWE(myRAD[[m]])
-  alefq[[m]] <- real_iterate$alleleFreq
+  name1[[m]] <- real_iterate$locTable
+  name2[[m]] <- real_iterate$alleleNucleotides
+  ###alefq[[m]] <- real_iterate$alleleFreq
   # alleledepth/(alleledepth + antialleledepth) through colsum
-  real_estigeno <- GetProbableGenotypes(real_iterate, omitCommonAllele = FALSE)
-  realestimate[[m]] <- real_estigeno
+  ###real_estigeno <- GetProbableGenotypes(real_iterate, omitCommonAllele = FALSE)
+  ###realestimate[[m]] <- real_estigeno
 }
 
 alratio <- list()
 for (n in 1:length(alefq)){
   alratio[[n]] <- colSums(myRAD[[n]]$alleleDepth)/(colSums(myRAD[[n]]$alleleDepth)+colSums(myRAD[[n]]$antiAlleleDepth))
 }
+names12 <- data.frame(unlist(name1),unlist(name2))
 Ratio_Freq <- data.frame(unlist(alratio),unlist(alefq))
 colnames(Ratio_Freq) <- c("alleleRatio","alleleFrequency")
 Ratio_Freq$difference <- abs(Ratio_Freq$alleleRatio - Ratio_Freq$alleleFrequency)
 # compare allele frequency 
 save(Ratio_Freq, file = "ratioXfreq.Rdata")
-# git test 2
 
 plot(Ratio_Freq$difference)
+
+# look into loci with more than 0.4 difference
+# collection of read depth (for a single read depth at one locus)
+
+sigbias <- Ratio_Freq[which(Ratio_Freq$difference >= 0.4),]
+RADloctable <- sapply(myRAD, function(x){x[3]})
+uninames <- unique(gsub("_[ACGT]*$","",rownames(sigbias)))
+SNO.1.1 <- read.csv("/Users/hejiale/polyRAD/datasets/SNO.1.1.CSV")
+SNO.1.1$chromosome <- formatC(SNO.1.1$chromosome, width = 2, flag = "0")
+SNO.1.1$uninames <- paste("S",SNO.1.1$chromosome,"_", SNO.1.1$position, sep = "")
+loclookat <- na.omit(match(uninames,SNO.1.1$uninames))
+lookat <- SNO.1.1[loclookat,]
+
+# compare depth of the lookat with typical depth
+# avg of depthRtio in myRAD, if it's close to tot1/(tot1+tot2), then biased, if close to freqency, no real biased.
+
+diff_ratio <- list()
+diff_freq <- list()
+bias_calc <- list()
+for (o in 1:length(myRAD)) {
+  diff_ratio[[o]] <- abs(colMeans(myRAD[[o]]$depthRatio, na.rm = TRUE)-alratio[[o]])
+  diff_freq[[o]] <- abs(colMeans(myRAD[[o]]$depthRatio, na.rm = TRUE)-alefq[[o]])
+  bias_calc[[o]] <- mean(colMeans(myRAD[[o]]$depthRatio, na.rm = TRUE))/alefq[[o]]
+}
+
+Ratio_Freq$diff_ratio <- unlist(diff_ratio)
+Ratio_Freq$diff_freq <- unlist(diff_freq)
+
+which(Ratio_Freq$diff_freq > 0.1)
+which(Ratio_Freq$diff_ratio > 0.1)
+
+SNO.1.1$X <- ifelse((SNO.1.1$X.1 %in% lookat$X.1), "lookat", "no")
+
+ggplot(SNO.1.1)+
+  geom_violin(aes(x = X, y = Depth))+
+  coord_trans(y = "log")
+
+plot(Ratio_Freq$diff_ratio, Ratio_Freq$diff_freq)
+abline(lm(Ratio_Freq$diff_freq~Ratio_Freq$diff_ratio), col = "green")
+
+# all values with higher diff_freq values, how often(portion out of the whole data), threshold = 0.1
+# separate the targeted value with chromosome and observe positions on chr maybe?
+# bias = avg(colmean(depthratio))/alefreq
+length(which(Ratio_Freq$diff_freq >= 0.1))/nrow(Ratio_Freq)
+high_diffq <- Ratio_Freq[which(Ratio_Freq$diff_freq >= 0.1),]
+
+pos_in_chr <- list()
+for (p in unique(substr(rownames(high_diffq),1, 3))){
+  pos_in_chr[[which(unique(substr(rownames(high_diffq),1, 3)) == p)]] <-grep(p, rownames(high_diffq))
+}
+
+all_loc <- gsub("S.*._","", gsub("_[ACGT]*$","",rownames(high_diffq)))
+
+plot(high_diffq$diff_freq[pos_in_chr[[1]]], log(as.integer(all_loc[pos_in_chr[[1]]])))
+
+high_diffq$pos <- as.integer(all_loc)
+high_diffq$chr <- gsub("S","", gsub("_.*","",rownames(high_diffq)))
+
+ggplot(high_diffq)+
+  geom_violin(aes(x = chr, y = log(pos)))
+
+Ratio_Freq$bias <- unlist(bias_calc)
+plot(log(Ratio_Freq$bias),Ratio_Freq$diff_freq)
