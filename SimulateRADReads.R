@@ -1,4 +1,4 @@
-setwd("/Users/hejiale")
+setwd("/Users/hejiale/polyRAD/datasets")
 # read csv as string instead of factor
 goldengate <- read.csv("goldengate_data.csv", row.names = 1, stringsAsFactors = FALSE)
 # making a dictionary

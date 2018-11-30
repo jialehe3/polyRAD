@@ -121,8 +121,10 @@ MAF_u <- unlist(MAF_collect)
 DP_u <- unlist(DP_collect)
 AltRef_u <- unlist(AltRef_collect)
  # make .csv file 
-write.csv(data.frame(chromosome = chrom_u, position = pos_u, MissingByMarker = MBM_u, MinorAlleleFrequency = MAF_u, Depth = DP_u, pvalue1to1_ref.over.alt = pc11_u, pvalue1to3_ref.over.alt = pc13_u, pvalue3to1_ref.over.alt = pc31_u, alt.over.total = AltRef_u), file= "SNO.1.csv")
-
+write.csv(data.frame(chromosome = chrom_u, position = pos_u, MissingByMarker = MBM_u, 
+                     MinorAlleleFrequency = MAF_u, Depth = DP_u, pvalue1to1_ref.over.alt = pc11_u,
+                     pvalue1to3_ref.over.alt = pc13_u,
+                     pvalue3to1_ref.over.alt = pc31_u, alt.over.total = AltRef_u),file= "SNO.1.csv")
 a <- sapply(chrom_collect,length)
 b <- sapply(pos_collect,length)
 c <- sapply(MBM_collect,length)
@@ -146,14 +148,14 @@ count <- 1
 for (j in cchrom[1:19]){
  
   k <- match(j, clengths$chr)
-  times <- ceiling(clen[k]/1000000)
+  times <- ceiling(clen[k]/10000000)
   for (l in 0:times){
     # extracting headers from myvcf
     samples <- VariantAnnotation::samples(VariantAnnotation::scanVcfHeader(myvcf))
     tryCatch({
     mysvp3 <- ScanVcfParam(fixed = "ALT", info = NA, geno = "AD", 
                            which = GRanges(j, 
-                                           IRanges((l*1000000+1), (l+1)*1000000)),
+                                           IRanges((l*10000000+1), (l+1)*10000000)),
                            samples = samples)
 # get chuncks of svps using the which argument within Scanvcfparam
 # then goto VCF2RADdata
@@ -182,8 +184,10 @@ for (m in 1:length(myRAD)){
 }
 
 alratio <- list()
+tot_depth <- list()
 for (n in 1:length(alefq)){
-  alratio[[n]] <- colSums(myRAD[[n]]$alleleDepth)/(colSums(myRAD[[n]]$alleleDepth)+colSums(myRAD[[n]]$antiAlleleDepth))
+  #alratio[[n]] <- colSums(myRAD[[n]]$alleleDepth)/(colSums(myRAD[[n]]$alleleDepth)+colSums(myRAD[[n]]$antiAlleleDepth))
+  tot_depth[[n]] <- colSums(myRAD[[n]]$alleleDepth)+colSums(myRAD[[n]]$antiAlleleDepth)
 }
 names12 <- data.frame(unlist(name1),unlist(name2))
 Ratio_Freq <- data.frame(unlist(alratio),unlist(alefq))
@@ -213,9 +217,9 @@ diff_ratio <- list()
 diff_freq <- list()
 bias_calc <- list()
 for (o in 1:length(myRAD)) {
-  diff_ratio[[o]] <- abs(colMeans(myRAD[[o]]$depthRatio, na.rm = TRUE)-alratio[[o]])
-  diff_freq[[o]] <- abs(colMeans(myRAD[[o]]$depthRatio, na.rm = TRUE)-alefq[[o]])
-  bias_calc[[o]] <- mean(colMeans(myRAD[[o]]$depthRatio, na.rm = TRUE))/alefq[[o]]
+  #diff_ratio[[o]] <- abs(colMeans(myRAD[[o]]$depthRatio, na.rm = TRUE)-alratio[[o]])
+  #diff_freq[[o]] <- abs(colMeans(myRAD[[o]]$depthRatio, na.rm = TRUE)-alefq[[o]])
+  bias_calc[[o]] <- colMeans(myRAD[[o]]$depthRatio, na.rm = TRUE)/alefq[[o]]
 }
 
 Ratio_Freq$diff_ratio <- unlist(diff_ratio)
@@ -235,7 +239,7 @@ abline(lm(Ratio_Freq$diff_freq~Ratio_Freq$diff_ratio), col = "green")
 
 # all values with higher diff_freq values, how often(portion out of the whole data), threshold = 0.1
 # separate the targeted value with chromosome and observe positions on chr maybe?
-# bias = avg(colmean(depthratio))/alefreq
+# bias = (colmean(depthratio))/alefreq
 length(which(Ratio_Freq$diff_freq >= 0.1))/nrow(Ratio_Freq)
 high_diffq <- Ratio_Freq[which(Ratio_Freq$diff_freq >= 0.1),]
 
@@ -256,3 +260,60 @@ ggplot(high_diffq)+
 
 Ratio_Freq$bias <- unlist(bias_calc)
 plot(log(Ratio_Freq$bias),Ratio_Freq$diff_freq)
+
+Ratio_Freq$totaldepth <- unlist(tot_depth)
+densitybias <- ggplot(Ratio_Freq, aes(x = log(bias), y = log(totaldepth)))+
+  geom_point()+
+  geom_density2d()+
+  xlim(-2, 8)
+
+# biased if with "bias" value smaller than 0.67 and bigger than 1.5
+mean(Ratio_Freq$bias <= 0.67 | Ratio_Freq$bias >= 1.5)
+# write a summary
+# use sweep to see the allele depth
+# sum read depth of each individual, sum of depth of allele/ sum of the depth of the individual, make it into new matrix
+for(q in length(myRAD)){
+  myRAD[[q]]$alleleDepth
+}
+rdpmatrix <- matrix(nrow = length(myRAD[[1]]))
+# then use colsum_of_the_new_matrix/(allele_depth + anti_allele_depth)
+
+# yd_func <- function(x) {
+#   r <- nrow(x$alleleDepth)
+#   c <- ncol(x$alleleDepth)
+#   allele_matrix <- matrix(NA, r, c)
+#   rsum <- rowsum(x$alleleDepth)
+#   csum <- colsum(x$alleleDepth)
+#   for (q in 1:c) {
+#     allele_matrix[, q] <- csum[q]/rsum
+#   }
+# }
+# 
+# yd <- sapply(myRAD, function(x) {
+#   r <- nrow(x$alleleDepth)
+#   c <- ncol(x$alleleDepth)
+#   allele_matrix <- matrix(NA, r, c)
+#   rsum <- rowSums(x$alleleDepth)
+#   csum <- colSums(x$alleleDepth)
+#   for (q in 1:c) {
+#     allele_matrix[, q] <- csum[q]/rsum
+#   }
+#   return(allele_matrix)
+# })
+
+# newmatrix <- do.call(cbind, yd)
+
+AddNormalizedDepthProp.RADdata <- function(object, ...){
+  # get the total number of reads per individual
+  depthPerInd <- rowSums(object$locDepth)
+  # get proportion of total reads for a taxon belonging to each allele
+  propDepthAl <- sweep(object$alleleDepth, 1, depthPerInd, "/")
+  totAl <- colSums(propDepthAl, na.rm = TRUE)
+  # get proportion of total reads for a taxon belonging to other alleles at locus
+  propDepthAnti <- sweep(object$antiAlleleDepth, 1, depthPerInd, "/")
+  totAnti <- colSums(propDepthAnti, na.rm = TRUE)
+  # get normalized proportion of reads for a locus belonging to an allele
+  object$normalizedDepthProp <- totAl/(totAl + totAnti)
+  
+  return(object)
+}
