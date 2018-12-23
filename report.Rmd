@@ -1,0 +1,194 @@
+---
+title: "polyRAD report FALL2018"
+author: 'Jiale He'
+date: "12/21/2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+The main idea was to figure out the bias during library making and sequencing while assuming polyRAD to be bias-free. 
+First of all we need to generate the RAD data from VCF files.
+For miscanthus, all datasets are in a cluster, chromosome information becomes essential in reading the VCF files in chunks.
+```{r miscanthus 1, warning= FALSE, include= TRUE, eval= FALSE , message=FALSE}
+library(VariantAnnotation)
+library(polyRADBias)
+clengths <- read.csv("/Users/hejiale/polyRAD/datasets/chromosome_lengths.CSV")
+clengths$chr <- gsub(clengths$chr, patter = "Chr", replacement = "")
+clengths$chr <- gsub(clengths$chr, patter="scaffold",replacement = "SCAFFOLD")
+cchrom <- clengths$chr
+clen <- clengths$length
+```
+Loop through the 19 chromosomes of miscanthus by reading 10,000,000 bytes of a chromosome each time, 198 times in total to go through all 19 chromosomes. tryCatch function aim to allow the loop to continue even errors occur due to data not passing the threshold, in this case, it is OK to ignore the few data that didn't pass the threshold.
+myRAD is the variable saving all 198 chunks of RADdata.
+```{r miscanthus2 , warning= FALSE, include= TRUE, eval= FALSE , message=FALSE, eval= FALSE}
+myRAD <- list()
+count <- 1
+for (j in cchrom[1:19]){
+  k <- match(j, clengths$chr)
+  times <- ceiling(clen[k]/10000000)
+  for (l in 0:times){
+    samples <- VariantAnnotation::samples(VariantAnnotation::scanVcfHeader(myvcf))
+    tryCatch({
+      mysvp3 <- ScanVcfParam(fixed = "ALT", info = NA, geno = "AD", 
+                             which = GRanges(j, 
+                                             IRanges((l*10000000+1), (l+1)*10000000)),
+                             samples = samples)
+      myRAD[[count]] <- VCF2RADdata(myvcf, svparam = mysvp3, yieldSize = NA_integer_)
+      count <- count + 1
+    },error = function(e){cat("ERROR :",conditionMessage(e), "\n")} )
+  }
+}
+```
+We think that only miscanthus genomic data can be narrow, and the accurate potato genomic data are too small to be used in the model. Thus, we used the Oryza longistaminata VCF files from Marlee Labroo. The rice genomic data went through the same pipelines as miscanthus using polyRADBetaBinomial. Both of the two datasets are treated with the two functions IterateHWE and IteratePopStruct. The two functions will iteratively run other polyRAD function until the allele frequency stabilizes.
+For rice, we had 11 VCF files for separate chromosomes.
+```{r rice1, warning= FALSE, include= TRUE, eval= FALSE , message=FALSE}
+vcf_list <- list()
+bg_list <- list()
+file_list <- list.files("/Users/hejiale/Desktop/For Jiale/Filtered/")
+for(i in 1:11) {
+  vcf_list[[i]] <- paste("/Users/hejiale/Desktop/For Jiale/Filtered/", file_list[i], sep = "")
+  bg_list[[i]] <- paste("/Users/hejiale/Desktop/For Jiale/Filtered/", file_list[i], ".bgz", sep = "")
+}
+mysvp <- ScanVcfParam(fixed = "ALT", info = "DP", geno = c("GT", "AD"))
+```
+As the result, due to the relatively smaller size of rice VCF files, each chromosome only takes one loop.
+```{r rice2, warning= FALSE, include= TRUE, eval= FALSE , message=FALSE}
+myRAD_rice <- list()
+for (j in 1 : length(vcf_list)){
+    samples <- VariantAnnotation::samples(VariantAnnotation::scanVcfHeader(vcf_list[[j]]))
+    tryCatch({
+      rice_svp <- ScanVcfParam(fixed = "ALT", info = NA, geno = "AD",
+                             samples = samples)
+    myRAD_rice[[j]] <- VCF2RADdata(vcf_list[[j]], svparam = rice_svp, yieldSize = NA_integer_)
+    },error = function(e){cat("ERROR :",conditionMessage(e), "\n")} )
+}
+```
+We made strings of RAD data to store information gerneated by Iteration functions, e.g. pull allele frequency out of the iterate file made by polyRAD and store in alefq_rice. Genotype estimation is also done in this process.
+(only rice's part of codes are showing)
+```{r rice3, warning= FALSE, include= TRUE, eval= FALSE , message=FALSE}
+alefq_rice <- list()
+realestimate <- list()
+name1 <- list()
+name2 <- list()
+better_bias <- list()
+for (m in 1:length(myRAD_rice)){
+  tryCatch({
+    real_iterate <- IteratePopStruct(myRAD_rice[[m]])
+    name1[[m]] <- real_iterate$locTable
+    name2[[m]] <- real_iterate$alleleNucleotides
+    alefq_rice[[m]] <- real_iterate$alleleFreq
+    real_estigeno <- GetProbableGenotypes(real_iterate, omitCommonAllele = FALSE)
+    realestimate[[m]] <- real_estigeno
+    better_bias[[m]] <- ((1-real_iterate$normalizedDepthProp)/(1-alefq_rice[[m]]))/(real_iterate$normalizedDepthProp/alefq_rice[[m]])
+    
+  },error = function(e){cat("ERROR :",conditionMessage(e), "\n")} )
+}
+```
+Allele ratio was calculated using every locus' allele depth over the total depth (allele depth + anti-allele depth), We compare the differences between the allele ratio and frequency. Difference greater than 0.4 is considered as significantly biased data.
+```{r rice4, warning= FALSE, include= TRUE, eval= FALSE , message=FALSE}
+alratio_rice <- list()
+tot_depth <- list()
+for (n in 1:length(alefq_rice)){
+  alratio_rice[[n]] <- colSums(myRAD_rice[[n]]$alleleDepth)/(colSums(myRAD_rice[[n]]$alleleDepth)+colSums(myRAD_rice[[n]]$antiAlleleDepth))
+  tot_depth[[n]] <- colSums(myRAD_rice[[n]]$alleleDepth)+colSums(myRAD_rice[[n]]$antiAlleleDepth)
+}
+sigbias <- Ratio_freq_rice[which(Ratio_freq_rice$difference >= 0.4),]
+```
+The next step is to build a data frame and include all useful information extracted and calculated from RADdata
+```{r rice5 , warning= FALSE, include= TRUE, eval= FALSE , message=FALSE}
+Ratio_freq_rice <- data.frame(unlist(alratio_rice),unlist(alefq_rice))
+colnames(Ratio_freq_rice) <- c("alleleRatio","alleleFrequency")
+```
+Put calculations results into the data frame. 
+We refined the calculation of bias by comparing the depth ratio from raw RAD data with allele ratio and frequency. If the depth ratio is closer to allele ratio, we assume there are biases, if closer to allele frequency, we assume no real biases exist. We focused on the difference between allele frequency and depth ratio and set a threshold of 0.1 of being close to allele frequency. In theory, values with more than 0.1 difference will be considered to have different level of biases depend on how big the difference. Biases were calculated using depth ratio divided by allele frequency.
+```{r rice6, warning= FALSE, include= TRUE, eval= FALSE , message=FALSE}
+Ratio_freq_rice$difference <- abs(Ratio_freq_rice$alleleRatio - Ratio_freq_rice$alleleFrequency)
+diff_ratio <- list()
+diff_freq <- list()
+bias_calc <- list()
+for (o in 1:length(myRAD_rice)) {
+  diff_ratio[[o]] <- abs(colMeans(myRAD_rice[[o]]$depthRatio, na.rm = TRUE)-alratio_rice[[o]])
+  diff_freq[[o]] <- abs(colMeans(myRAD_rice[[o]]$depthRatio, na.rm = TRUE)-alefq_rice[[o]])
+  bias_calc[[o]] <- colMeans(myRAD_rice[[o]]$depthRatio, na.rm = TRUE)/alefq_rice[[o]]
+}
+Ratio_freq_rice$diff_ratio <- unlist(diff_ratio)
+Ratio_freq_rice$diff_freq <- unlist(diff_freq)
+Ratio_freq_rice$bias <- unlist(bias_calc)
+Ratio_freq_rice$totaldepth <- unlist(tot_depth)
+Ratio_freq_rice$betterbias <- unlist(better_bias)
+```
+
+After this step, a brief look into relationship between position in chromosomes and bias was done for miscanthus.
+
+```{r warning= FALSE, include= TRUE, eval= FALSE , message=FALSE}
+high_diffq <- Ratio_Freq_pop[which(Ratio_Freq_pop$diff_freq >= 0.1),]
+pos_in_chr <- list()
+for (p in unique(substr(rownames(high_diffq),1, 3))){
+  pos_in_chr[[which(unique(substr(rownames(high_diffq),1, 3)) == p)]] <-grep(p, rownames(high_diffq))
+}
+all_loc <- gsub("S.*._","", gsub("_[ACGT]*$","",rownames(high_diffq)))
+plot(high_diffq$diff_freq[pos_in_chr[[1]]], log(as.integer(all_loc[pos_in_chr[[1]]])))
+high_diffq$pos <- as.integer(all_loc)
+high_diffq$chr <- gsub("S","", gsub("_.*","",rownames(high_diffq)))
+ggplot(high_diffq)+
+  geom_violin(aes(x = chr, y = log(pos)))
+```
+
+```{r echo=FALSE}
+knitr::include_graphics("miscanthus pos and highfq. biasincorp.tiff")
+```
+
+A better way to calculate bias was suggested by Gerard(2018), which offered more viewable distribution of the bias. Calculated biases that close to 1 are data with low/no bias. The function AddNormalizedDepthProp.RADdata was orginally separated from the Iterate functions but later incorperated, and can be extracted and used for calculate biases directly.
+```{r rice7, warning= FALSE, include= TRUE, eval= FALSE , message=FALSE}
+better_bias[[m]] <- ((1-real_iterate$normalizedDepthProp)/(1-alefq_rice[[m]]))/(real_iterate$normalizedDepthProp/alefq_rice[[m]])
+```
+
+With the new calculation, we assume biased if the bias is smaller than 0.67 or bigger than 1.5, the ratio of existence of bias could be calculated.
+```{r warning= FALSE, include= TRUE, eval= FALSE , message=FALSE}
+mean(Ratio_Freq_pop$betterBias <= 0.67 | Ratio_Freq_pop$betterBias >= 1.5)
+```
+
+Graphs can be ploted for better visualization
+```{r rice8, warning= FALSE, include= TRUE,eval= FALSE }
+plot(Ratio_freq_rice$diff_ratio, Ratio_freq_rice$diff_freq)
+abline(lm(Ratio_freq_rice$diff_freq~Ratio_freq_rice$diff_ratio), col = "green")
+```
+
+```{r echo=FALSE, fig.cap="difference of allele frequency vs difference in allele ratio RICE"}
+knitr::include_graphics("rice diff_freq over diff_ratio. biasincorp.tiff")
+```
+
+```{r echo=FALSE, fig.cap="difference of allele frequency vs difference in allele ratio MISCANTHUS"}
+knitr::include_graphics("miscanthus diff_freq over diff_ratio. biasincorp.tiff")
+```
+```{r}
+# This plot can show how the bias related to difference of allele frequency.
+```
+```{r rice9, warning= FALSE, include= TRUE, echo= FALSE,eval= FALSE }
+plot(log(Ratio_freq_rice$betterbias),Ratio_freq_rice$diff_freq)
+```
+
+```{r ,echo=FALSE, fig.cap="difference of allele frequency vs bias RICE"}
+knitr::include_graphics("rice difffreq vs betterbias. biasincorp.tiff")
+```
+
+```{r ,echo=FALSE, fig.cap="difference of allele frequency vs bias MISCANTHUS"}
+knitr::include_graphics("miscanthus difffreq vs betterbias. biasincorp.tiff")
+```
+```{r}
+# The density plots could show relationship between read depth and bias. Higher read depth tend to have greater 
+# bias
+```
+```{r rice10, warning= FALSE, include= TRUE, echo= FALSE,eval= FALSE }
+ggplot(Ratio_freq_rice, aes(x = log(betterbias), y = log(totaldepth)))+
+  geom_point()+
+  geom_density2d()+
+  xlim(-6, 6)
+```
+```{r ,echo=FALSE, fig.cap="density plot of readdepth vs bias RICE"}
+knitr::include_graphics("rice totdepth over betterbias. bias incorp.tiff")
+```
+
+```{r ,echo=FALSE, fig.cap="density plot of readdepth vs bias MISCANTHUS"}
+knitr::include_graphics("miscanthus totdepth over betterbias. bias incorp.tiff")
+```
