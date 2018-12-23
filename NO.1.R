@@ -240,21 +240,17 @@ abline(lm(Ratio_Freq$diff_freq~Ratio_Freq$diff_ratio), col = "green")
 # all values with higher diff_freq values, how often(portion out of the whole data), threshold = 0.1
 # separate the targeted value with chromosome and observe positions on chr maybe?
 # bias = (colmean(depthratio))/alefreq
-length(which(Ratio_Freq$diff_freq >= 0.1))/nrow(Ratio_Freq)
-high_diffq <- Ratio_Freq[which(Ratio_Freq$diff_freq >= 0.1),]
+length(which(Ratio_Freq_pop$diff_freq >= 0.1))/nrow(Ratio_Freq_pop)
+high_diffq <- Ratio_Freq_pop[which(Ratio_Freq_pop$diff_freq >= 0.1),]
 
 pos_in_chr <- list()
 for (p in unique(substr(rownames(high_diffq),1, 3))){
   pos_in_chr[[which(unique(substr(rownames(high_diffq),1, 3)) == p)]] <-grep(p, rownames(high_diffq))
 }
-
 all_loc <- gsub("S.*._","", gsub("_[ACGT]*$","",rownames(high_diffq)))
-
 plot(high_diffq$diff_freq[pos_in_chr[[1]]], log(as.integer(all_loc[pos_in_chr[[1]]])))
-
 high_diffq$pos <- as.integer(all_loc)
 high_diffq$chr <- gsub("S","", gsub("_.*","",rownames(high_diffq)))
-
 ggplot(high_diffq)+
   geom_violin(aes(x = chr, y = log(pos)))
 

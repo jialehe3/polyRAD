@@ -45,6 +45,7 @@ simu2_collect <- list()
 simu2 <- matrix(0L, nrow = nrow(golden_gate), ncol = ncol(golden_gate) *2,
                 dimnames = list(rownames(golden_gate), 
                                 paste(rep(colnames(golden_gate), each = 2), 0:1, sep = "_")))
+# p_ratio is the bias
 p_ratio <- list(c(0.9,0.1), c(0.8,0.2), c(0.7,0.3), c(0.6,0.4), c(0.5,0.5), c(0.4,0.6), c(0.3,0.7), c(0.2,0.8), c(0.1,0.9))
 for (l in 1:length(p_ratio)){
 for (j in 1:ncol(golden_gate)){
