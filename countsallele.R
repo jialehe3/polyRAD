@@ -76,7 +76,7 @@ for (m in 1:length(myRAD)){
 }
 
 # posterprob[[1]][[1]][1,1:10,1:10] will show colnames and rownames
-
+# second double brackets is the ploidity, here only diploid
 PPequalzero <- list()
 for (n in 1:length(posterprob)) {
   alleleloc <- myRAD[[n]]$alleles2loc
@@ -87,10 +87,52 @@ for (n in 1:length(posterprob)) {
 diff_alc_pp <- list()
 count <- 1
 for (o in 1:length(allelecount)) {
-  for (p in 1:nrow(allelecount[[o]])){
-    diff_alc_pp[[count]] <- sum(allelecount[[o]][p,] != PPequalzero[[o]][p,])
+  for (p in 1:ncol(allelecount[[o]])){
+    diff_alc_pp[[count]] <- sum(allelecount[[o]][,p] != PPequalzero[[o]][,p])
     count <- count+1
   }
 }
+plot(unlist(diff_alc_pp),col= "#00000030")
 
-# align posterprob with locicountsum and 
+ggplot(mapping = aes(seq_along(unlist(diff_alc_pp)), y = unlist(diff_alc_pp)))+
+  geom_point()+
+  geom_density2d()
+
+qplot(unlist(diff_alc_pp),binwidth = 10, geom="histogram")+
+ coord_flip()
+
+plot(table(unlist(diff_alc_pp)))
+
+diff_markers <- list()
+count <- 1
+for (o in 1:length(allelecount)) {
+  for (p in 1:ncol(allelecount[[o]])){
+    diff_alc_pp[[count]] <- if(sum(allelecount[[o]][,p] != PPequalzero[[o]][,p]) > 180){
+      diff_markers[[count]] <- c(o,p)
+    }
+    count <- count+1
+  }
+}
+diff_markers <- Filter(Negate(is.null), diff_markers)
+
+find_markers <- function(a){
+  marker <- colnames(PPequalzero[[a[1]]])[a[2]]
+  return(marker)
+}
+
+diff_markers2 <- sapply(1:length(diff_markers),function(x)find_markers(diff_markers[[x]]))
+
+check_depth <- list()
+count <- 1
+for(i in 1:length(myRAD)){
+  for(j in 1:length(diff_markers2)){
+    locpos <- grep(diff_markers2[j], colnames(myRAD[[i]]$alleleDepth))
+    check_depth[[count]] <- sum(myRAD[[i]]$alleleDepth[,locpos[1:length(locpos)]])
+    count <- count + 1
+  }
+}
+
+check_depth <- Filter(Negate(is.na), check_depth)
+
+
+# PosterProb from bayesian, readcounts  
